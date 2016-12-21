@@ -71,6 +71,37 @@ object Utility {
         }
       }
   }
+  def scrapeCarHeaders(url:String):Map[String, JsValue]= {
+    //val url = "http://m.finn.no/car/used/ad.html?finnkode=78647939"
+    //val url = "http://m.finn.no/car/used/ad.html?finnkode=77386827" //sold
+    //val url = "http://m.finn.no/car/used/ad.html?finnkode=78601940" //deleted page
+    val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=3"
+    val validUrl = url.replace("\"", "")
+    val doc: Try[Document] = getURL(validUrl)(10)
+    println(doc.get.select("a[id]"))
+    doc match {
+      case Success(doc) =>
+        val carPropElements: Element = doc.select(".pbs , .page , .line , .r-size2of3 , .main-section , #page-results").first()
+        var carPropMap = Map[String, String]()
+
+        if (carPropElements != null) {
+          var i = 0
+          for (elem: Element <- carPropElements.children()) {
+            if ((i % 2) == 0) {
+              val key = elem.text
+              val value = elem.nextElementSibling().text
+              carPropMap += (key.asInstanceOf[String] -> value.asInstanceOf[String])
+            }
+            i = i + 1
+          }
+        } else carPropMap = Map("MissingKeys" -> "MissingValues")
+    }
+    val jsObj = Json.obj("url" -> url, "deleted" -> false, "title" -> "cartitle" )
+    jsObj.value.toMap
+
+  }
+
+
   def scrapeCarDetails(url:String):Map[String, JsValue]= {
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=78647939"
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=77386827" //sold
