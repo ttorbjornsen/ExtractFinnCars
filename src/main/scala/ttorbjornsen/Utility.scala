@@ -72,7 +72,14 @@ object Utility {
       }
   }
 
-  def scrapeCarHeaders(url:String):JsArray= {
+  def scrapeCarHeaders(baseUrl:String, numOfPages:Int) ={
+    val pagesRange = 1 to numOfPages
+    for (num <- pagesRange) {
+      scrapeCarHeadersFromPage(baseUrl + "&page=" + num)
+    }
+
+  }
+  def scrapeCarHeadersFromPage(url:String):JsArray= {
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=78647939"
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=77386827" //sold
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=78601940" //deleted page
