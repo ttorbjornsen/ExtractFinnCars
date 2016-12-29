@@ -1,20 +1,20 @@
 package ttorbjornsen
 
 
-import kafka.producer.ProducerConfig
+import java.time.LocalDateTime
 import java.util.Properties
-import scala.util.Random
-import kafka.producer.Producer
-import kafka.producer.KeyedMessage
-import java.util.Date
-import play.api.libs.json._
+
+import kafka.producer.{Producer, ProducerConfig}
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success}
 
 
 object ExtractFinnCars extends App {
-  val events = 10
-  val topic = "finncars_header"
+  val topic = "acq_car_header"
   val brokers = "kafka:9092"
-  val rnd = new Random()
   val props = new Properties()
   props.put("metadata.broker.list", brokers)
   props.put("serializer.class", "kafka.serializer.StringEncoder")
@@ -24,17 +24,48 @@ object ExtractFinnCars extends App {
   val config = new ProducerConfig(props)
   val producer = new Producer[String, String](config)
 
-  println("before send")
-  val t = System.currentTimeMillis()
-  for (nEvents <- Range(0, events)) {
-    val runtime = new Date().getTime();
-    val ip = "192.168.2." + rnd.nextInt(255);
-    val msg = runtime + "," + nEvents + ",www.example.com," + ip;
-    val data = new KeyedMessage[String, String](topic, ip, msg);
-    producer.send(data);
-  }
-  println("after send")
+  // each Future will async try to extract page results from Kafka and
+  val hdrPages1 = Range(1,10,1)
+  val hdrPages2 = Range(10,20,1)
 
-  System.out.println("sent per second: " + events * 1000 / (System.currentTimeMillis() - t))
-  producer.close()
+
+
+  val f1:Future[Unit] = Future{
+    hdrPages1.map{page =>
+      //val acqCarHeaders = Utility.scrapeCarHeaders("http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4",1,8)
+      val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=" + page
+      Utility.saveFinnCarsPageResults(producer, topic, url)
+      println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
+    }
+  }
+
+  val f2:Future[Unit] = Future{
+    hdrPages2.map{page =>
+      val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=" + page
+      Utility.saveFinnCarsPageResults(producer, topic, url)
+      println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
+    }
+  }
+
+  //ensure that the main thread will not end before each Future has been completed. Timeout after 10 minutes.
+  val fSer2: Future[Unit] = for {
+    r1 <- f1
+    r2 <- f2
+  } yield(r1,r2)
+  Await.result(fSer2, 10 minutes) //avoid main thread stopping before futures have completed
+
+  // TODO: print message when some pages have not been loaded successfully (due to timeout)?
+  fSer2.onComplete{
+    case Success(_) =>  {
+      println("Finished trying to write pages " + Math.min(hdrPages1.min, hdrPages2.min) + " - " + Math.max(hdrPages1.max, hdrPages2.max) + " to Kafka")
+      producer.close()
+    }
+
+    case Failure(_) => {
+      println("Timeout - not able to complete writing to Kafka within time limit.")
+      producer.close()
+    }
+
+  }
+
 }

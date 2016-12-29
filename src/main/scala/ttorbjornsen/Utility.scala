@@ -1,27 +1,21 @@
 package ttorbjornsen
 
-import java.lang.IndexOutOfBoundsException
-
-import org.jsoup.{HttpStatusException, Jsoup}
-import org.jsoup.nodes.{Entities, _}
-import org.jsoup.nodes.Document.OutputSettings
-import play.api.libs.json._
-import org.jsoup.select.Elements
-import org.jsoup.nodes.Document.OutputSettings
-
-import scala.collection.immutable.Map
-import scala.collection.JavaConversions._
-import java.util.HashMap
-
-import scala.collection.mutable.ListBuffer
-import scala.io.Source
-import scala.util.Try
-import scala.util.{Failure, Success}
-import java.net.URL
 import java.time.temporal.ChronoUnit
-import java.time.{LocalDate, ZoneId}
-import java.util
+import java.time.{LocalDate, LocalDateTime, ZoneId}
 import java.util.HashMap
+
+import kafka.producer.{KeyedMessage, Producer}
+import org.jsoup.Jsoup
+import org.jsoup.nodes._
+import play.api.libs.json._
+
+import scala.collection.JavaConversions._
+import scala.collection.immutable.Map
+import scala.collection.mutable.ListBuffer
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success, Try}
 
 
 
@@ -30,6 +24,7 @@ import java.util.HashMap
   * Created by torbjorn.torbjornsen on 04.07.2016.
   */
 
+case class AcqCarHeader(finnkode:String, location:String, title:String, year:String, km:String, price:String)
 
 object Utility {
 
@@ -72,22 +67,47 @@ object Utility {
       }
   }
 
-  def scrapeCarHeaders(baseUrl:String, numOfPages:Int) ={
-    val pagesRange = 1 to numOfPages
-    for (num <- pagesRange) {
-      scrapeCarHeadersFromPage(baseUrl + "&page=" + num)
+  def saveFinnCarsPageResults(producer:Producer[String,String], topic:String, url: String):Unit = {
+    //val pageResult = Future{Source.fromURL(new URL(url)).mkString}
+    val pageResult = Future{scrapeCarHeadersFromPage(url).mkString}
+    val action = pageResult.map {results =>
+      producer.send(new KeyedMessage[String, String](topic, results))
+    } recover{
+      case t: Throwable => {
+        t.printStackTrace()
+        saveFinnCarsPageResults(producer, topic, url) //retry
+      }
     }
 
+    Await.result(action, 2 minutes)
   }
-  def scrapeCarHeadersFromPage(url:String):JsArray= {
+
+
+  def scrapeCarHeaders(baseUrl:String, startPage:Int, lastPage:Int) ={
+    //val baseUrl = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4"
+    //val startPage = 1
+    //val lastPage = 10
+    val pagesRange = startPage to lastPage
+    var temp = ListBuffer[JsObject]()
+    for (num <- pagesRange) {
+      val tempList = scrapeCarHeadersFromPage(baseUrl + "&page=" + num)
+      for (jsobj <- tempList) {
+        temp += jsobj
+
+      }
+    }
+    temp.toList.toString
+  }
+
+
+  def scrapeCarHeadersFromPage(url:String):List[JsObject]= {
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=78647939"
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=77386827" //sold
     //val url = "http://m.finn.no/car/used/ad.html?finnkode=78601940" //deleted page
-    val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=3"
-    val validUrl = url.replace("\"", "")
-    val doc: Try[Document] = getURL(validUrl)(10)
+    //val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=3"
+    val doc: Try[Document] = getURL(url)(10)
 
-    var carHeaderJsArray = Json.arr()
+    val carHeadersFromPageList = new ListBuffer[JsObject]()
 
     doc match {
       case Success(doc) =>
@@ -100,18 +120,27 @@ object Utility {
           val km = rubrikkElement.getElementsByAttributeValue("data-automation-id", "bodyRow").get(1).text
           val price = rubrikkElement.getElementsByAttributeValue("data-automation-id", "bodyRow").get(2).text
           val jsObj = Json.obj("finnkode" -> finnkode, "location" -> location, "title" -> title, "year" -> year, "km" -> km, "price" -> price)
-          carHeaderJsArray = carHeaderJsArray :+ jsObj
+          //DAO.writeCarHeader(jsObj)
+          carHeadersFromPageList += jsObj
+
         }
 
-
       case Failure(e) => {
-        println("URL " + url + " has been deleted.")
+        println("URL " + url + " not processed.")
         val jsObj = Json.obj("finnkode" -> "NULL", "location" -> "NULL", "title" -> "NULL", "year" -> "NULL", "km" -> "NULL", "price" -> "NULL")
-        carHeaderJsArray = carHeaderJsArray :+ jsObj
-
+        carHeadersFromPageList += jsObj
       }
     }
-    carHeaderJsArray
+    carHeadersFromPageList.toList
+  }
+
+  def getCurrentDate():String = {
+    val currentTime = LocalDateTime.now()
+    currentTime.toLocalDate().toString()
+  }
+
+  def getCurrentTime():String = {
+    LocalDateTime.now().toString()
   }
 
 
