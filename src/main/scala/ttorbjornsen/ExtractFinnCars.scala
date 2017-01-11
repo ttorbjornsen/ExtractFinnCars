@@ -13,6 +13,7 @@ import scala.util.{Failure, Success}
 
 
 object ExtractFinnCars extends App {
+  Thread.sleep(20000) //sleep while spark docker container is getting ready. Should be moved to dockerfile.
   val topic = "acq_car_header"
   val brokers = "kafka:9092"
   val props = new Properties()
@@ -25,25 +26,29 @@ object ExtractFinnCars extends App {
   val producer = new Producer[String, String](config)
 
   // each Future will async try to extract page results from Kafka and
-  val hdrPages1 = Range(1,10,1)
-  val hdrPages2 = Range(10,20,1)
+  val hdrPages1 = Range(1,100,1)
+  val hdrPages2 = Range(100,200,1)
 
+//  val hdrPages1 = Range(1,150,1)
+//  val hdrPages2 = Range(150,300,1)
 
 
   val f1:Future[Unit] = Future{
     hdrPages1.map{page =>
       //val acqCarHeaders = Utility.scrapeCarHeaders("http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4",1,8)
-      val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=" + page
+      val url = "http://m.finn.no/car/used/search.html?year_from=2007&body_type=4&rows=100&page=" + page
       Utility.saveFinnCarsPageResults(producer, topic, url)
       println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
+      Thread.sleep(5000)
     }
   }
 
   val f2:Future[Unit] = Future{
     hdrPages2.map{page =>
-      val url = "http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4&page=" + page
+      val url = "http://m.finn.no/car/used/search.html?year_from=2007&body_type=4&rows=100&page=" + page
       Utility.saveFinnCarsPageResults(producer, topic, url)
       println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
+      Thread.sleep(5000)
     }
   }
 
