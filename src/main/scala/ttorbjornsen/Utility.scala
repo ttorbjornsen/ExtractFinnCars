@@ -28,24 +28,25 @@ case class AcqCarHeader(finnkode:String, location:String, title:String, year:Str
 
 object Utility {
 
-  def getURL(url: String)(retry: Int): Try[Document] = {
-    Try(Jsoup.connect(url).get)
-      .recoverWith {
-        case _ if(retry > 0) => {
-          Thread.sleep(3000)
-          println("Retry url " + url + " - " + retry + " retries left")
-          getURL(url)(retry - 1)
-        }
+  def getURL(url: String)(retry: Int): Try[Document] = Try(Jsoup.connect(url).
+    userAgent("Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.2 (KHTML, like Gecko) Chrome/15.0.874.120 Safari/535.2").
+    followRedirects(true).
+    execute().parse())
+    .recoverWith {
+      case _ if(retry > 0) => {
+        Thread.sleep(3000)
+        println("Retry url " + url + " - " + retry + " retries left")
+        getURL(url)(retry - 1)
       }
-  }
+    }
 
   def saveFinnCarsPageResults(producer:Producer[String,String], topic:String, url: String):Unit = {
     //val pageResult = Future{Source.fromURL(new URL(url)).mkString}
     val pageResult = Future{scrapeCarHeadersFromPage(url).toString}
 
     val action = pageResult.map {results =>
-      producer.send(new KeyedMessage[String, String](topic, results))
-//      println("success - extracting url " + url)
+      //producer.send(new KeyedMessage[String, String](topic, results))
+      println("success - extracting url " + url + results)
     } recover{
       case t: Throwable => {
         t.printStackTrace()
