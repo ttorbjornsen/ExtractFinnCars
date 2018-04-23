@@ -22,10 +22,39 @@ object ExtractFinnCars extends App {
   props.put("producer.type", "async")
   props.put("request.required.acks", "1")
 
+  import java.sql.{Connection, DriverManager, ResultSet};
+
+  // Change to Your Database Config
+  val password = System.getProperty("password")
+  val username = System.getProperty("username")
+  val conn_str = "jdbc:postgresql://localhost:5432/finncars_db?user=" + username + "&password=" + password
+
+  // Load the driver
+  classOf[org.postgresql.Driver]
+
+  // Setup the connection
+  val conn = DriverManager.getConnection(conn_str)
+  try {
+    // Configure to be Read Only
+    val statement = conn.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
+
+    // Execute Query
+    val rs = statement.executeQuery("SELECT url FROM acq_car_hdr")
+
+    // Iterate Over ResultSet
+    while (rs.next) {
+      println(rs.getString("url"))
+    }
+  }
+  finally {
+    conn.close
+  }
+
+
   val config = new ProducerConfig(props)
   val producer = new Producer[String, String](config)
 
-  System.setProperty("javax.net.ssl.trustStore", "c:\\temp\\finn-ssl-certificate.jks")
+  System.setProperty("javax.net.ssl.trustStore", "c:\\temp\\finn-ssl-certificate.jks") //https://stackoverflow.com/questions/7744075/how-to-connect-via-https-using-jsoup
 
   // each Future will async try to extract page results from Kafka and
   val hdrPages1 = Range(1,100,1)
