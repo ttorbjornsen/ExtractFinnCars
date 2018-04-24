@@ -34,21 +34,6 @@ object ExtractFinnCars extends App {
 
   // Setup the connection
   val conn = DriverManager.getConnection(conn_str)
-  try {
-    // Configure to be Read Only
-    val statement = conn.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)
-
-    // Execute Query
-    val rs = statement.executeQuery("SELECT url FROM acq_car_hdr")
-
-    // Iterate Over ResultSet
-    while (rs.next) {
-      println(rs.getString("url"))
-    }
-  }
-  finally {
-    conn.close
-  }
 
 
   val config = new ProducerConfig(props)
@@ -68,7 +53,7 @@ object ExtractFinnCars extends App {
     hdrPages1.map{page =>
       //val acqCarHeaders = Utility.scrapeCarHeaders("http://m.finn.no/car/used/search.html?year_from=2003&year_to=2003&body_type=4",1,8)
       val url = "https://www.finn.no/car/used/search.html?year_from=2007&body_type=4&rows=100&page=" + page
-      Utility.saveFinnCarsPageResults(producer, topic, url)
+      Utility.saveFinnCarsPageResults(producer, topic, url, conn)
       println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
       Thread.sleep(5000)
     }
@@ -77,7 +62,7 @@ object ExtractFinnCars extends App {
   val f2:Future[Unit] = Future{
     hdrPages2.map{page =>
       val url = "https://www.finn.no/car/used/search.html?year_from=2007&body_type=4&rows=100&page=" + page
-      Utility.saveFinnCarsPageResults(producer, topic, url)
+      Utility.saveFinnCarsPageResults(producer, topic, url, conn)
       println("Page " + page + " written to Kafka topic " + topic + " . Time : " + LocalDateTime.now().toString)
       Thread.sleep(5000)
     }
@@ -95,10 +80,12 @@ object ExtractFinnCars extends App {
     case Success(_) =>  {
       println("Finished trying to write pages " + Math.min(hdrPages1.min, hdrPages2.min) + " - " + Math.max(hdrPages1.max, hdrPages2.max) + " to Kafka")
       producer.close()
+      conn.close()
     }
 
     case Failure(_) => {
       println("Timeout - not able to complete writing to Kafka within time limit.")
+      conn.close()
       producer.close()
     }
 
